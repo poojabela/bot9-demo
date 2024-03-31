@@ -1,15 +1,8 @@
 "use client";
 
 import { Backspace, PaperPlaneTilt } from "@phosphor-icons/react";
-import {
-  FormEvent,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useChat } from "ai/react";
 
 const STORE_NAME = "Rashmi Beauty Saloon";
 
@@ -31,15 +24,6 @@ export default function Root() {
   );
 }
 
-export type Message =
-  | string
-  | { stage: "INFORMATION"; content: string }
-  | {
-      stage: "SCHEDULED";
-      content: string;
-      data: any;
-    };
-
 const stageLabels = {
   INFORMATION: "Information",
   SCHEDULED: "Scheduled",
@@ -49,68 +33,45 @@ type ChatProps = {
   reset: () => void;
 };
 function Chat({ reset }: ChatProps) {
-  const [messages, setMessages] = useState<Array<Message>>([]);
-  const currentStage = useMemo(() => {
-    return (
-      (messages.filter((message) => typeof message !== "string") as any).at(-1)
-        ?.stage ?? "INFORMATION"
-    );
-  }, [messages]);
+  const {
+    messages,
+    input,
+    handleInputChange,
+    handleSubmit,
+    isLoading,
+    setMessages,
+    append,
+  } = useChat({
+    api: "/api/chat",
+    async experimental_onToolCall(chatMessages, toolCalls) {
+      const tool = toolCalls.at(0);
 
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-
-  const handleMessage = useCallback(
-    async (message: string, retry: boolean = true) => {
-      setIsLoading(true);
-      try {
-        const response = await fetch("api/chat", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ messages: [...messages, message] }),
-        });
-
-        const data = await response.json();
-        const { output } = data;
-
-        if (output.stage === "SCHEDULED") {
-          localStorage.setItem(
-            "appointments",
-            JSON.stringify([
-              output.data,
-              ...JSON.parse(localStorage.getItem("appointments") ?? "[]"),
-            ]),
-          );
-        }
-
-        setMessages((prevMessages) => [...prevMessages, message, output]);
-      } catch (error) {
-        console.error(error);
-
-        if (retry) {
-          await handleMessage(message, false);
-        }
-      } finally {
-        setIsLoading(false);
+      if (
+        tool &&
+        typeof tool !== "string" &&
+        tool.function.name === "schedule_appointment"
+      ) {
+        localStorage.setItem(
+          "appointments",
+          JSON.stringify([
+            JSON.parse(tool.function.arguments),
+            ...JSON.parse(localStorage.getItem("appointments") ?? "[]"),
+          ]),
+        );
       }
+
+      return {
+        messages: [...chatMessages],
+      };
     },
-    [messages],
-  );
+  });
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-
-    const formRef = e.currentTarget as HTMLFormElement;
-
-    const formData = new FormData(formRef);
-    const message = formData.get("message")?.toString();
-
-    if (message) {
-      await handleMessage(message);
-      formRef.reset();
-    }
-  };
+  const currentStage = useMemo(() => {
+    const last = messages.at(-1)!;
+    return last?.tool_calls && last.tool_calls.length
+      ? "SCHEDULED"
+      : "INFORMATION";
+  }, [messages]);
 
   const messagesDivRef = useRef<HTMLDivElement>(null);
 
@@ -124,11 +85,14 @@ function Chat({ reset }: ChatProps) {
 
   useEffect(() => {
     if (!ranOnesRef.current) {
-      handleMessage("Hey!");
+      append({
+        role: "user",
+        content: "Hey!",
+      });
 
       ranOnesRef.current = true;
     }
-  }, [handleMessage]);
+  }, [append]);
 
   console.table(messages);
 
@@ -157,28 +121,43 @@ function Chat({ reset }: ChatProps) {
         className="flex-1 p-4 overflow-y-auto flex flex-col items-stretch justify-start gap-2 scroll-smooth"
       >
         {messages.map((message, i) => {
-          if (typeof message === "string") {
+          if (message.role === "user") {
             return (
               <p
                 key={i}
                 className="text-sm px-3 py-1.5 rounded-xl border border-current/50 bg-green-50 text-green-500 w-3/4 ml-auto break-words"
               >
-                {message}
+                {message.content}
               </p>
             );
           }
 
+          if (message.tool_calls) {
+            const tool = message.tool_calls.at(0);
+
+            if (
+              tool &&
+              typeof tool !== "string" &&
+              tool.function.name === "schedule_appointment"
+            ) {
+              return (
+                <p
+                  key={i}
+                  className="text-base font-medium px-3 py-1.5 rounded-xl border border-current/50 text-blue-500 w-full break-words"
+                >
+                  Your appointment has been scheduled successfully!
+                </p>
+              );
+            }
+          }
+
           return (
-            <div
+            <p
               key={i}
               className="text-sm px-3 py-1.5 rounded-xl border border-current/50 text-blue-500 w-3/4 break-words"
             >
-              {message.stage === "INFORMATION" ? (
-                message.content
-              ) : message.stage === "SCHEDULED" ? (
-                <span className="font-bold text-base">{message.content}</span>
-              ) : null}
-            </div>
+              {message.content}
+            </p>
           );
         })}
       </div>
@@ -199,6 +178,8 @@ function Chat({ reset }: ChatProps) {
             autoFocus
             autoComplete="off"
             required
+            onChange={handleInputChange}
+            value={input}
           />
           <button
             type="submit"
