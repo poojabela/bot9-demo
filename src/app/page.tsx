@@ -5,6 +5,7 @@ import {
   FormEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -72,6 +73,16 @@ function Chat({ reset }: ChatProps) {
 
         const data = await response.json();
         const { output } = data;
+
+        if (output.stage === "SCHEDULED") {
+          localStorage.setItem(
+            "appointments",
+            JSON.stringify([
+              output.data,
+              ...JSON.parse(localStorage.getItem("appointments") ?? "[]"),
+            ]),
+          );
+        }
 
         setMessages((prevMessages) => [...prevMessages, message, output]);
       } catch (error) {
@@ -176,32 +187,40 @@ function Chat({ reset }: ChatProps) {
         className="shrink-0 p-4 flex flex-row items-stretch justify-between gap-2"
         onSubmit={handleSubmit}
       >
-        <input
-          type="text"
-          name="message"
-          placeholder="Chat here..."
-          className="flex-1 font-medium text-base/none py-2 px-4 rounded-xl bg-blue-50 text-blue-500 border border-current/50 transition-shadow focus:outline-none focus-visible:shadow-md placeholder:text-blue-950/50 disabled:opacity-75 disabled:cursor-not-allowed"
-          autoFocus
-          autoComplete="off"
-          disabled={isLoading}
-          required
-        />
-        <button
-          type="submit"
-          className="shrink-0 font-medium text-base/none py-2 px-4 rounded-xl bg-blue-500 text-blue-50 hover:scale-105 transition-transform disabled:opacity-75 disabled:cursor-not-allowed"
-          disabled={isLoading}
+        <fieldset
+          disabled={isLoading || currentStage === "SCHEDULED"}
+          className="contents"
         >
-          <PaperPlaneTilt size={16} />
-        </button>
+          <input
+            type="text"
+            name="message"
+            placeholder="Chat here..."
+            className="flex-1 font-medium text-base/none py-2 px-4 rounded-xl bg-blue-50 text-blue-500 border border-current/50 transition-shadow focus:outline-none focus-visible:shadow-md placeholder:text-blue-950/50 disabled:opacity-75 disabled:cursor-not-allowed"
+            autoFocus
+            autoComplete="off"
+            required
+          />
+          <button
+            type="submit"
+            className="shrink-0 font-medium text-base/none py-2 px-4 rounded-xl bg-blue-500 text-blue-50 hover:scale-105 transition-transform disabled:opacity-75 disabled:cursor-not-allowed"
+          >
+            <PaperPlaneTilt size={16} />
+          </button>
+        </fieldset>
       </form>
     </div>
   );
 }
-
 type StartScreenProps = {
   setIsStarted: React.Dispatch<React.SetStateAction<boolean>>;
 };
 function StartScreen({ setIsStarted }: StartScreenProps) {
+  const [appointments, setAppointments] = useState<any[]>([]);
+
+  useLayoutEffect(() => {
+    setAppointments(JSON.parse(localStorage.getItem("appointments") ?? "[]"));
+  }, []);
+
   return (
     <div className="flex flex-col items-stretch justify-center h-full gap-16 p-4">
       <h1 className="text-base/none uppercase text-center text-blue-950 font-black">
@@ -217,8 +236,34 @@ function StartScreen({ setIsStarted }: StartScreenProps) {
           onClick={() => setIsStarted(true)}
           className="font-medium text-lg/none py-2 px-4 rounded-xl bg-blue-50 text-blue-500 border border-current/50 hover:scale-105 transition-transform"
         >
-          Chat
+          Chat & Book
         </button>
+      </div>
+
+      <div className="overflow-auto flex flex-col items-stretch justify-start gap-4 border-t border-blue-950/20 pt-4 border-dashed">
+        <p className="font-semibold text-sm/none uppercase text-blue-500 text-center">
+          Prev. Appointments
+        </p>
+
+        {appointments.length ? (
+          appointments.map((appointment, i) => {
+            return (
+              <div
+                key={i}
+                className="flex flex-col items-stretch justify-start gap-2 px-4 py-2 border border-blue-950/5 rounded-lg"
+              >
+                <p className="text-sm/none font-medium">{appointment.name}</p>
+                <p className="text-sm/none">
+                  {appointment.plan} → {appointment.date_time}
+                </p>
+              </div>
+            );
+          })
+        ) : (
+          <p className="text-blue-950/50 text-xs/none font-medium text-center">
+            None
+          </p>
+        )}
       </div>
     </div>
   );
