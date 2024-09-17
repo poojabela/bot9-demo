@@ -127,7 +127,7 @@ function Chat({ reset }: ChatProps) {
                 key={i}
                 className="text-sm px-3 py-1.5 rounded-xl border border-current/50 bg-green-50 text-green-500 w-3/4 ml-auto break-words"
               >
-                {message.content}
+                {message.content}{" "}
               </p>
             );
           }
